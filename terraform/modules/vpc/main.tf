@@ -15,7 +15,7 @@ resource "aws_internet_gateway" "main" {
 
 resource "aws_subnet" "public" {
   # checkov:skip=CKV_AWS_130:Public subnets intentionally assign public IPs for dev ingress
-  count             = length(var.public_subnet_cidrs)
+  count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
   availability_zone       = data.aws_availability_zones.available.names[count.index]
@@ -127,7 +127,7 @@ resource "aws_security_group" "eks_control_plane" {
 }
 
 resource "aws_security_group" "vllm" {
-  name        = "${var.name_prefix}-vllm-sg"
+  name = "${var.name_prefix}-vllm-sg"
   # checkov:skip=CKV_AWS_382:Egress to 0.0.0.0/0 required for dev outbound internet
   # checkov:skip=CKV2_AWS_5:Security group is referenced by the vLLM Service at env level
   description = "vLLM serving endpoint"

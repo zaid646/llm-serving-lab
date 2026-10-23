@@ -20,15 +20,15 @@ terraform {
 }
 
 provider "aws" {
-  region                     = "us-east-1"
+  region                      = "us-east-1"
   skip_credentials_validation = true
   skip_region_validation      = true
   endpoints {
-    s3   = "http://localhost:4566"
-    iam  = "http://localhost:4566"
-    ec2  = "http://localhost:4566"
-    eks  = "http://localhost:4566"
-    rds  = "http://localhost:4566"
+    s3  = "http://localhost:4566"
+    iam = "http://localhost:4566"
+    ec2 = "http://localhost:4566"
+    eks = "http://localhost:4566"
+    rds = "http://localhost:4566"
   }
 }
 
@@ -73,6 +73,6 @@ module "rds" {
   subnet_ids      = module.vpc.private_subnet_ids
   vpc_cidr        = module.vpc.vpc_cidr
   # checkov:skip=CKV_SECRET_6:DB password is a placeholder value for dev environment
-  db_password     = "changeme-in-tfvars"
-  tags            = var.tags
+  db_password = "changeme-in-tfvars"
+  tags        = var.tags
 }

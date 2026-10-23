@@ -14,7 +14,7 @@ resource "aws_internet_gateway" "main" {
 
 resource "aws_subnet" "public" {
   # checkov:skip=CKV_AWS_130:Public subnets intentionally assign public IPs for dev ingress
-  count             = length(var.public_subnet_cidrs)
+  count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
   availability_zone       = data.aws_availability_zones.available.names[count.index]

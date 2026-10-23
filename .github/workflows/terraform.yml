@@ -68,7 +68,7 @@ jobs:
           framework: terraform
           soft_fail: false
           output: cli,json,sarif
-          output_path: ./checkov-${{ matrix.target | replace('/', '-') }}.json
+          output_path: ./checkov-${{ matrix.target }}.json
 
       - name: Commit checkov results
         if: always()
@@ -109,7 +109,7 @@ jobs:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       - name: terraform init (LocalStack backend)
-        working-directory: terraform/envs/dev
+        working-directory: terraform/envs-dev-localstack
         run: |
           terraform init -backend=false
           TF_VAR_aws_endpoint=http://localstack:4566 \
@@ -117,7 +117,7 @@ jobs:
 
       - name: terraform plan (LocalStack)
         id: plan
-        working-directory: terraform/envs/dev
+        working-directory: terraform/envs-dev-localstack
         run: |
           TF_VAR_aws_endpoint=http://localstack:4566 \
           terraform plan -out=plan.tfplan
@@ -133,8 +133,8 @@ jobs:
         with:
           name: localstack-plan
           path: |
-            terraform/envs/dev/plan.tfplan
-            terraform/envs/dev/plan.json
+            terraform/envs-dev-localstack/plan.tfplan
+            terraform/envs-dev-localstack/plan.json
           retention-days: 7
 
   security-report:
