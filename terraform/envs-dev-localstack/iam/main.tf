@@ -83,6 +83,6 @@ module "model_artifacts_bucket" {
   # checkov:skip=CKV_AWS_18:Access logging not configured for dev bucket; no logging target bucket defined
   # checkov:skip=CKV_AWS_144:Cross-region replication not required for dev model-artifact bucket
   # checkov:skip=CKV_AWS_145:SSE-AES256 used; KMS encryption not configured for dev simplicity
-  bucket_name = var.model_artifacts_bucket
+  bucket = var.model_artifacts_bucket
   tags        = var.tags
 }
