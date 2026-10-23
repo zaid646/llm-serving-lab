@@ -28,12 +28,12 @@ jobs:
     strategy:
       matrix:
         target:
-          - modules/s3
-          - modules/iam
-          - modules/vpc
-          - modules/eks
-          - modules/rds
-          - envs/dev
+          - terraform/modules/s3
+          - terraform/modules/iam
+          - terraform/modules/vpc
+          - terraform/modules/eks
+          - terraform/modules/rds
+          - terraform/envs/dev
     steps:
       - uses: actions/checkout@v4
 
@@ -68,18 +68,17 @@ jobs:
           framework: terraform
           soft_fail: false
           output: cli,json,sarif
-          output_path: ./checkov-${{ matrix.target }}.json
 
       - name: Commit checkov results
         if: always()
         run: |
           mkdir -p terraform/security-reports
-          cp checkov-${{ matrix.target | replace('/', '-') }}.json terraform/security-reports/checkov-${{ matrix.target | replace('/', '-') }}.json 2>/dev/null || true
+          cp checkov-*.json terraform/security-reports/ 2>/dev/null || true
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: checkov-reports-${{ matrix.target | replace('/', '-') }}
+          name: checkov-reports-${{ matrix.target }}
           path: terraform/security-reports/
           retention-days: 7
 
@@ -162,5 +161,5 @@ jobs:
 
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: docs: update Terraform checkov security report
+          commit_message: "docs: update Terraform checkov security report"
           file_pattern: terraform/security-report.txt
