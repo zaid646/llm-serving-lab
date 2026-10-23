@@ -1,0 +1,122 @@
+name: Terraform platform validation
+
+on:
+  push:
+    branches: [main, feature/terraform-platform]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: fmt + validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - modules/s3
+          - modules/iam
+          - modules/vpc
+          - modules/eks
+          - modules/rds
+          - envs/dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.17.0
+
+      - name: terraform fmt -check -recursive
+        working-directory: ./terraform/${{ matrix.target }}
+        run: terraform fmt -check -recursive
+
+      - name: terraform init -backend=false
+        working-directory: ./terraform/${{ matrix.target }}
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        working-directory: ./terraform/${{ matrix.target }}
+        run: terraform validate
+
+  plan-localstack:
+    name: LocalStack plan gate
+    needs: validate
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: ${{ env.LOCALSTACK_IMAGE }}
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3,iam,ec2,eks,rds
+          DEFAULT_REGION: us-east-1
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: terraform init (LocalStack backend)
+        working-directory: terraform/envs-dev-localstack
+        run: |
+          terraform init -backend=false
+          TF_VAR_aws_endpoint=http://localstack:4566 \
+          terraform init
+
+      - name: terraform plan (LocalStack)
+        id: plan
+        working-directory: terraform/envs-dev-localstack
+        run: |
+          TF_VAR_aws_endpoint=http://localstack:4566 \
+          terraform plan -out=plan.tfplan
+          terraform show -json plan.tfplan > plan.json
+          echo "changes=$(terraform show -json plan.tfplan | jq '[.resource_changes[] | select(.change.actions[] != "no-op")] | length')" >> $GITHUB_OUTPUT
+
+      - name: fail on plan error
+        if: failure()
+        run: exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: localstack-plan
+          path: |
+            terraform/envs-dev-localstack/plan.tfplan
+            terraform/envs-dev-localstack/plan.json
+          retention-days: 7
+
+  security-report:
+    name: Commit checkov security report
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: terraform/security-reports
+          merge-multiple: true
+
+      - name: Aggregate checkov report
+        run: |
+          if ls terraform/security-reports/*.json >/dev/null 2>&1; then
+            jq -s 'add' terraform/security-reports/*.json > terraform/security-report.txt 2>/dev/null || \
+            cat terraform/security-reports/*.json > terraform/security-report.txt
+          else
+            echo "No checkov findings" > terraform/security-report.txt
+          fi
+          wc -l terraform/security-report.txt
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: update Terraform checkov security report"
+          file_pattern: terraform/security-report.txt

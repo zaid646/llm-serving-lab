@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/terraform-platform]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  compose-config:
+    name: docker compose config (base + observability)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config sanity check
+        run: docker compose -f docker-compose.yml -f docker-compose.observability.yml config
+
+  slo-rules:
+    name: promtool validate SLO rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install promtool
+        run: |
+          curl -sL https://github.com/prometheus/prometheus/releases/download/v3.15.1/prometheus-3.15.1.linux-amd64.tar.gz | tar -xz -C /tmp prometheus-3.15.1.linux-amd64/promtool
+          chmod +x /tmp/prometheus-3.15.1.linux-amd64/promtool
+          /tmp/prometheus-3.15.1.linux-amd64/promtool check rules observability/prometheus/rules/slo.rules.yml
+
+  lint:
+    name: lint (ruff + yamllint + markdown-link-check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ruff check
+        uses: chartboost/ruff-action@v1
+        with:
+          args: check .
+
+      - name: yamllint
+        run: |
+          pip install yamllint==1.35.1
+          yamllint .
+
+      - name: markdown-link-check
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          config-file: .markdown-link-check.json

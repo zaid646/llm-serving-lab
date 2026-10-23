@@ -1,0 +1,104 @@
+name: Terraform drift detection
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # weekly, Sundays 02:00 UTC
+  workflow_dispatch:
+
+env:
+  TERRAFORM_VERSION: 1.17.0
+  LOCALSTACK_IMAGE: localstack/localstack:3.4.0
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+  TF_VAR_aws_access_key_id: test
+  TF_VAR_aws_secret_access_key: test
+  TF_VAR_aws_region: us-east-1
+  TF_VAR_aws_endpoint: http://localstack:4566
+
+jobs:
+  drift:
+    name: LocalStack drift check
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        image: ${{ env.LOCALSTACK_IMAGE }}
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3,iam,ec2,eks,rds
+          DEFAULT_REGION: us-east-1
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: terraform init (LocalStack backend)
+        working-directory: terraform/envs/dev
+        run: |
+          terraform init -backend=false
+          TF_VAR_aws_endpoint=http://localstack:4566 \
+          terraform init
+
+      - name: terraform plan (LocalStack)
+        id: plan
+        working-directory: terraform/envs/dev
+        run: |
+          TF_VAR_aws_endpoint=http://localstack:4566 \
+          terraform plan -out=drift.tfplan
+          terraform show -json drift.tfplan > drift.json
+          cp drift.json terraform/plan-latest.json
+          cp drift.tfplan terraform/plan-latest.tfplan
+
+      - name: Compare current plan against baseline (drift detection)
+        id: drift-check
+        run: |
+          if [ ! -f terraform/plan-baseline.json ]; then
+            echo "No baseline yet: committing current plan as baseline."
+            cp terraform/plan-latest.json terraform/plan-baseline.json
+            cp terraform/plan-latest.tfplan terraform/plan-baseline.tfplan
+            echo "drift=baseline-created" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          added=$(jq '[.resource_changes[] | select(.change.actions[] == "create")] | length' terraform/plan-latest.json)
+          changed=$(jq '[.resource_changes[] | select(.change.actions[] == "update")] | length' terraform/plan-latest.json)
+          removed=$(jq '[.resource_changes[] | select(.change.actions[] == "delete")] | length' terraform/plan-latest.json)
+          echo "added=$added changed=$changed removed=$removed" >> $GITHUB_OUTPUT
+          if [ "$added" -gt 0 ] || [ "$changed" -gt 0 ] || [ "$removed" -gt 0 ]; then
+            echo "drift=detected" >> $GITHUB_OUTPUT
+          else
+            echo "drift=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail on drift
+        if: steps.drift-check.outputs.drift == 'detected'
+        run: |
+          echo "::error::Drift detected against terraform/plan-baseline.json. Review terraform/plan-latest.json."
+          exit 1
+
+      - name: Commit baseline on first run (schedule only)
+        if: steps.drift-check.outputs.drift == 'baseline-created' && github.event.schedule
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add terraform/plan-baseline.json terraform/plan-baseline.tfplan
+          git commit -m "chore: commit initial Terraform plan baseline for drift detection" || true
+          git push || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: localstack-drift-plan
+          path: |
+            terraform/envs/dev/drift.json
+            terraform/envs/dev/drift.tfplan
+            terraform/plan-baseline.json
+          retention-days: 7
